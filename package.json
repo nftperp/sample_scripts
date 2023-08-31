@@ -1,0 +1,24 @@
+{
+  "name": "sample_scripts",
+  "version": "1.0.0",
+  "description": "NFTPerp V2 relies on Trigger order keepers and external liquidators to keep the platform going.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nftperp/sample_scripts.git"
+  },
+  "author": "NFTPerp",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/nftperp/sample_scripts/issues"
+  },
+  "homepage": "https://github.com/nftperp/sample_scripts#readme",
+  "dependencies": {
+    "axios": "^1.5.0",
+    "dotenv": "^16.3.1",
+    "ethers": "^6.7.1"
+  }
+}
