@@ -7,7 +7,7 @@ require("dotenv").config();
 const CH_ABI = require("./abi/ClearingHouse.json");
 
 let provider = new ethers.AlchemyProvider(
-    process.env.NETWORK,
+    'arbitrum',
     process.env.ALCHEMY_KEY
 );
 
