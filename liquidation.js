@@ -34,7 +34,7 @@ async function main(){
             for (const trader in tradersByAmm[amm]) {
                 if (await contract.isLiquidatable(amm, trader)){
                     try {
-                        await contract.liquidate(amm, trader, 1 * 10**18);
+                        await contract.liquidate(amm, trader, String(1 * 10**18)); //the last part is the margin. 1 ether means a margin of 1X
                         deleteTrader(amm, trader);
                         console.log(`Successfully liquidated ${trader} in ${amm}`);
                     } catch (error) {
