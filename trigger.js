@@ -31,54 +31,60 @@ async function main(){
     const tradersByAmm = getTradersByAmm();
 
     contract.on('PositionChanged', async (amm, trader, openNotional, size, exchangedQuote, exchangedSize, realizedPnL, fundingPayment, markPrice, ifFee, ammFee, limitFee, keeperFee, event) => {
-        for (const amm in tradersByAmm) {
-            for (const trader in tradersByAmm[amm]) {
-                let triggerOrders = await axios.get(`https://api.nftperp.xyz/orders/trigger?amm=${reversedAmms[amm]}&trader=${trader}`)
-    
-                for (const triggerOrder of triggerOrders.data.data) {
-                    console.log(triggerOrder)
-                    console.log(amm, triggerOrder.trader)
-                    let pos = await contract.getPosition(amm, triggerOrder.trader)
-    
-                    let direction;
-    
-                    if (pos.size > 0){
-                        direction = 'long'
-                    } else {
-                        direction = 'short'
-                    }
-    
-                    if (triggerOrder.takeProfit == false){
-                        if (direction == 'long'){
-                            if (markPrice  <= triggerOrder.trigger) {
-                                console.log(`Trigger Order with ID ${triggerOrder.id} has been triggered at mark price ${markPrice}`);
-                                await contract.closePositionKeeper(amm, triggerOrder.id)
-                                
-                            }
+        
+        try{
+            for (const amm in tradersByAmm) {
+                for (const trader in tradersByAmm[amm]) {
+                    let triggerOrders = await axios.get(`https://api.nftperp.xyz/orders/trigger?amm=${reversedAmms[amm]}&trader=${trader}`)
+        
+                    for (const triggerOrder of triggerOrders.data.data) {
+                        console.log(triggerOrder)
+                        console.log(amm, triggerOrder.trader)
+                        let pos = await contract.getPosition(amm, triggerOrder.trader)
+        
+                        let direction;
+        
+                        if (pos.size > 0){
+                            direction = 'long'
+                        } else {
+                            direction = 'short'
                         }
-                        else{
-                            if (markPrice  >= triggerOrder.trigger ) {
-                                console.log(`Trigger Order with ID ${triggerOrder.id} has been triggered at mark price ${markPrice}`);
-                                await contract.closePositionKeeper(amm, triggerOrder.id)
+        
+                        if (triggerOrder.takeProfit == false){
+                            if (direction == 'long'){
+                                if (markPrice  <= triggerOrder.trigger) {
+                                    console.log(`Trigger Order with ID ${triggerOrder.id} has been triggered at mark price ${markPrice}`);
+                                    await contract.closePositionKeeper(amm, triggerOrder.id)
+                                    
+                                }
                             }
-                        }
-                    } else {
-                        if (direction == 'long'){
-                            if (markPrice  >= triggerOrder.trigger) {
-                                console.log(`Trigger Order with ID ${triggerOrder.id} has been triggered at mark price ${markPrice}`);
-                                await contract.closePositionKeeper(amm, triggerOrder.id)
+                            else{
+                                if (markPrice  >= triggerOrder.trigger ) {
+                                    console.log(`Trigger Order with ID ${triggerOrder.id} has been triggered at mark price ${markPrice}`);
+                                    await contract.closePositionKeeper(amm, triggerOrder.id)
+                                }
                             }
-                        }
-                        else{
-                            if (markPrice  <= triggerOrder.trigger ) {
-                                console.log(`Trigger Order with ID ${triggerOrder.id} has been triggered at mark price ${markPrice}`);
-                                await contract.closePositionKeeper(amm, triggerOrder.id)
-    
+                        } else {
+                            if (direction == 'long'){
+                                if (markPrice  >= triggerOrder.trigger) {
+                                    console.log(`Trigger Order with ID ${triggerOrder.id} has been triggered at mark price ${markPrice}`);
+                                    await contract.closePositionKeeper(amm, triggerOrder.id)
+                                }
+                            }
+                            else{
+                                if (markPrice  <= triggerOrder.trigger ) {
+                                    console.log(`Trigger Order with ID ${triggerOrder.id} has been triggered at mark price ${markPrice}`);
+                                    await contract.closePositionKeeper(amm, triggerOrder.id)
+        
+                                }
                             }
                         }
                     }
                 }
             }
+        }
+        catch (error) {
+            console.error(error)
         }
     });
 }

@@ -34,7 +34,7 @@ async function main(){
             for (const trader in tradersByAmm[amm]) {
                 if (await contract.isLiquidatable(amm, trader)){
                     try {
-                        await contract.liquidate(amm, trader, 1);
+                        await contract.liquidate(amm, trader, 1 * 10**18);
                         deleteTrader(amm, trader);
                         console.log(`Successfully liquidated ${trader} in ${amm}`);
                     } catch (error) {
