@@ -1,12 +1,14 @@
 const { ethers } = require("ethers");
 const axios = require("axios").default;
-const { fetchPositions } = require("./fetchPositions"); // Import the new library
+const { fetchPositions } = require("./fetchPositions");
 const { getTradersByAmm, updateTrader, deleteTrader } = require('./stateManager');
+const ERC20_ABI = require("./abi/ERC20.json");
+
 require("dotenv").config();
 
 const CH_ABI = require("./abi/ClearingHouse.json");
 
-let provider = new ethers.AlchemyProvider(
+let provider = new ethers.providers.AlchemyProvider(
     'arbitrum',
     process.env.ALCHEMY_KEY
 );
@@ -19,6 +21,13 @@ async function main(){
     let CH_ADDY = res.data.data.clearingHouse;
 
     let contract = new ethers.Contract(CH_ADDY, CH_ABI['abi'], signer);
+
+    let weth_contract = new ethers.Contract(res.data.data.weth, ERC20_ABI['abi'], signer);
+    const allowance = await weth_contract.allowance(signer.address, CH_ADDY);
+
+    if (allowance.lt(ethers.utils.parseEther('1000'))) {
+        await weth_contract.approve(CH_ADDY, ethers.utils.constants.MaxUint256);
+    }
 
     await fetchPositions();
     const tradersByAmm = getTradersByAmm();
