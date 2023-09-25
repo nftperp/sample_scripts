@@ -22,7 +22,7 @@ function updateTrader(trader, amm, size) {
 
     tradersByAmm[amm][trader] += size;
 
-    if (tradersByAmm[amm][trader] < Math.abs(0.001)) {
+    if (Math.abs(tradersByAmm[amm][trader]) < Math.abs(0.001)) {
         delete tradersByAmm[amm][trader];
     }
 }
