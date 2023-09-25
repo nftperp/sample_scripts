@@ -36,8 +36,8 @@ async function main(){
 
     //If you are running a highly efficient system, you might miss trades between the time you get the list of trades and the time you start the listener. At this point you'll have to get clever. We recommend getting the PositionData from thegraph or thru on onchain mechanics
     
-    contract.on('PositionChanged', async (amm, trader, openNotional, size, exchangedQuote, exchangedSize, realizedPnL, fundingPayment, markPrice, ifFee, ammFee, limitFee, keeperFee, event) => {
-        updateTrader(trader, amm, size)
+    contract.on('PositionChanged', async (amm, curr_trader, openNotional, size, exchangedQuote, exchangedSize, realizedPnL, fundingPayment, markPrice, ifFee, ammFee, limitFee, keeperFee, event) => {
+        updateTrader(curr_trader, amm, size)
 
         //loop thru now to look at liquidation
         for (const amm in tradersByAmm) {
