@@ -54,7 +54,7 @@ async function main(){
     contract.on('PositionChanged', async (amm, trader, openNotional, size, exchangedQuote, exchangedSize, realizedPnL, fundingPayment, markPrice, ifFee, ammFee, limitFee, keeperFee, event) => {
         if (isRunning == false){
             console.log("Running trigger because of positionChange Event")
-            await perform_trigger(contract, reversedAmms)
+            await perform_trigger(contract, res.data.data.amms)
         }
     });
 }
