@@ -249,5 +249,5 @@ async function liquidation(){
 
 }
 
-// twapOut()
+twapOut()
 liquidation()
