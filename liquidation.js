@@ -265,7 +265,12 @@ async function liquidation(){
 
         if (isRunning == false){
             console.log("Running trigger because of minute wait")
-            perform_trigger(contract, res.data.data.amms)
+            
+            try{
+                await performLiquidation(contract)            
+            } catch (error) {
+                console.log(error)
+            }
         }
     };
 
