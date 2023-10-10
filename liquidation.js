@@ -258,7 +258,16 @@ async function liquidation(){
         }
     });  
 
-    await performLiquidation(contract);
+    //run performLiquidation every minute
+    while (true){
+        // wait 1 minute
+        await new Promise(r => setTimeout(r, 60000));
+
+        if (isRunning == false){
+            console.log("Running trigger because of minute wait")
+            perform_trigger(contract, res.data.data.amms)
+        }
+    };
 
 }
 
