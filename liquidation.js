@@ -14,20 +14,32 @@ let provider = new ethers.providers.AlchemyProvider(
 let signer = new ethers.Wallet(process.env.LIQUIDATOR_KEY, provider);
 
 let ACTIVE_POSITIONS = {};
+let AT_ONCE = 10;
 
 async function getActivePositionsForAmm(contract, amm, traders) {
     const activeTraders = [];
 
-    for (const trader of traders) {
-        const position = await contract.getPosition(amm, trader);
-        if (position.size != 0) {
-            activeTraders.push(trader);
+    function chunkArray(array, size) {
+        const result = [];
+        for (let i = 0; i < array.length; i += size) {
+            result.push(array.slice(i, i + size));
         }
+        return result;
     }
 
-    if (activeTraders.length > 0) {
-        ACTIVE_POSITIONS[amm] = activeTraders;
+    const traderChunks = chunkArray(traders, AT_ONCE);
+
+    for (const chunk of traderChunks) {
+        const positionsPromises = chunk.map(trader => contract.getPosition(amm, trader));
+        const positions = await Promise.all(positionsPromises);
+
+        for (let i = 0; i < chunk.length; i++) {
+            if (positions[i].size != 0) {
+                activeTraders.push(chunk[i]);
+            }
+        }
     }
+    return activeTraders;
 }
 
 let isRunning = false;
@@ -78,7 +90,6 @@ async function processSingleSellForAmm(contract, signer, addy, amm) {
                 }
                
             } else {
-                console.log(`Not enough exposure to sell ${config.SELL_ONCE} ETH of ${amm}. Total Exposure was ${total_exposure}, Current Exposure is ${current_exposure}`);
             }
         }
     } catch (error) {
@@ -115,7 +126,6 @@ function absBigNumber(bigNumber) {
 async function attemptLiquidation(amm, trader, contract, signer) {
     try {
         let isLiquidatable = await contract.isLiquidatable(amm, trader)
-
         if (isLiquidatable) {
             let amm_contract = new ethers.Contract(amm, AMM_ABI['abi'], signer);
             let position = await contract.getPosition(amm, trader);
@@ -126,7 +136,6 @@ async function attemptLiquidation(amm, trader, contract, signer) {
             if (index > -1) {
                 ACTIVE_POSITIONS[amm].splice(index, 1);
             }
-            console.log(`Successfully liquidated ${trader} in ${amm}`);
         }
     } catch (error) {
         let blockNumber = await provider.getBlockNumber();
@@ -135,28 +144,31 @@ async function attemptLiquidation(amm, trader, contract, signer) {
 }
 
 
-async function performLiquidation(contract){
-    try{
-        //wait random second between 0 to 0.5 to preven concurrency
+async function performLiquidation(contract) {
+    try {
+        //wait random second between 0 to 0.5 to prevent concurrency
         await new Promise(r => setTimeout(r, Math.random() * 500));
+        
         if(isRunning) {
             return;
         }
-        console.log("Performing liquidations")
 
         isRunning = true;
 
-        const liquidationPromises = [];
+        let allLiquidations = [];
 
-        //loop thru now to look at liquidation
         for (const amm in ACTIVE_POSITIONS) {
             for (const t in ACTIVE_POSITIONS[amm]) {
                 let trader = ACTIVE_POSITIONS[amm][t]
-                liquidationPromises.push(attemptLiquidation(amm, trader, contract, signer));
+                allLiquidations.push(() => attemptLiquidation(amm, trader, contract, signer));
             }
         }
 
-        await Promise.all(liquidationPromises);
+        while (allLiquidations.length > 0) {
+            const currentBatch = allLiquidations.splice(0, AT_ONCE);
+            const currentPromises = currentBatch.map(func => func());
+            await Promise.all(currentPromises);
+        }
 
     } catch (error) {
         console.log(error)
@@ -217,16 +229,17 @@ async function liquidation(){
     }
 
 
+    
     let traders = await fetchAllTraders()
-    const promises = Object.entries(res.data.data.amms).map(([ammName, ammAddress]) => 
-        getActivePositionsForAmm(contract, ammAddress, traders)
-    );
 
-    await Promise.all(promises);
-
+    for (let amm in res.data.data.amms){
+        let AMM_ADDY = res.data.data.amms[amm]
+        let curr_positions = await getActivePositionsForAmm(contract, AMM_ADDY, traders);
+        ACTIVE_POSITIONS[AMM_ADDY] = curr_positions
+        console.log(curr_positions)
+    }
 
     contract.on('PositionChanged', async (amm, trader, openNotional, size, exchangedQuote, exchangedSize, realizedPnL, fundingPayment, markPrice, ifFee, ammFee, limitFee, keeperFee, event) => {
-
         const position = await contract.getPosition(amm, trader);
         
         if (position.size != 0){
