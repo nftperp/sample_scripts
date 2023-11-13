@@ -30,7 +30,7 @@ async function perform_trigger(contract, amms){
 
         for (const triggerOrder of triggerOrders.data.data) {
             let amm = amms[triggerOrder.amm]
-            if (await contract.isTriggerOrderValid(amm, triggerOrder.id)){
+            if (await contract.isTriggerOrderValid(triggerOrder.id)){
                 await contract.closePositionKeeper(amm, triggerOrder.id)
                 console.log(`Trigger Order with ID ${triggerOrder.id} has been triggered at on the ${triggerOrder.amm} AMM`);
             }
