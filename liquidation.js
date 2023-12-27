@@ -178,7 +178,7 @@ async function performLiquidation(contract) {
 }
 
 async function fetchAllTraders() {
-    const baseURL = 'https://api.nftperp.xyz/leaderboard';
+    const baseURL = 'https://api.nftperp.xyz/leaderboard/trade';
     const pageSize = 1000; 
     let allTraders = [];
     let page = 1;
