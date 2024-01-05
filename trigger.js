@@ -51,7 +51,7 @@ async function main(){
     let contract = new ethers.Contract(CH_ADDY, CH_ABI['abi'], signer);
     await perform_trigger(contract, res.data.data.amms)
 
-    contract.on('PositionChanged', async (amm, trader, openNotional, size, exchangedQuote, exchangedSize, realizedPnL, fundingPayment, markPrice, ifFee, ammFee, limitFee, keeperFee, event) => {
+    contract.on('PositionChanged', async (amm, trader, margin, size, exchangedQuote, exchangedBase, realizedPnL, fundingPayment, markPrice, ifFee, ammFee, limitFee, liquidatorFee, keeperFee, tradeType, event) => {        
         if (isRunning == false){
             console.log("Running trigger because of positionChange Event")
             await perform_trigger(contract, res.data.data.amms)
