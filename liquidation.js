@@ -245,11 +245,11 @@ async function liquidation(){
         if (position.size != 0){
             if (!ACTIVE_POSITIONS[amm].includes(trader)) {
                 ACTIVE_POSITIONS[amm].push(trader);
-            } else {
-                let index = ACTIVE_POSITIONS[amm].indexOf(trader);
-                if (index > -1) {
-                    ACTIVE_POSITIONS[amm].splice(index, 1);
-                }
+            }
+        }  else {
+            let index = ACTIVE_POSITIONS[amm].indexOf(trader);
+            if (index > -1) {
+                ACTIVE_POSITIONS[amm].splice(index, 1);
             }
         }
 
