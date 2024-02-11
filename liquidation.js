@@ -13,6 +13,7 @@ let provider = new ethers.providers.AlchemyProvider(
 
 let signer = new ethers.Wallet(process.env.LIQUIDATOR_KEY, provider);
 
+let ACTIVE_LP_POSITIONS = {};
 let ACTIVE_POSITIONS = {};
 let AT_ONCE = 10;
 
@@ -99,7 +100,7 @@ async function processSingleSellForAmm(contract, signer, addy, amm) {
 
 async function twapOut(){
 
-    let res = await axios.get("https://api.nftperp.xyz/contracts");
+    let res = await axios.get("https://live.nftperp.xyz/contracts");
     let CH_ADDY = res.data.data.clearingHouse;
     let contract = new ethers.Contract(CH_ADDY, CH_ABI['abi'], signer);
 
@@ -143,6 +144,29 @@ async function attemptLiquidation(amm, trader, contract, signer) {
     }
 }
 
+async function attemptLiquidationMaker(amm, maker, contract, signer){
+    try {
+        let amm_contract = new ethers.Contract(amm, AMM_ABI['abi'], signer);
+        let isLiquidatable = await amm_contract.isMakerLiquidatable(maker)
+
+        if (isLiquidatable){
+            let [size, oN] = await amm_contract.getFullMakerImpermanentPosition(maker);
+            let markPrice = await amm_contract.getMarkPrice();
+
+            let margin_size = size.mul(markPrice).div(2);
+            await contract.liquidateMaker(amm, maker, margin_size);
+
+            let index = ACTIVE_LP_POSITIONS[amm].indexOf(maker);
+            if (index > -1) {
+                ACTIVE_LP_POSITIONS[amm].splice(index, 1);
+            }
+
+        }
+    } catch (error) {
+    }
+
+}
+
 
 async function performLiquidation(contract) {
     try {
@@ -164,6 +188,13 @@ async function performLiquidation(contract) {
             }
         }
 
+        for (const amm in ACTIVE_LP_POSITIONS) {
+            for (const t in ACTIVE_LP_POSITIONS[amm]) {
+                let trader = ACTIVE_LP_POSITIONS[amm][t]
+                allLiquidations.push(() => attemptLiquidationMaker(amm, trader, contract, signer));
+            }
+        }
+
         while (allLiquidations.length > 0) {
             const currentBatch = allLiquidations.splice(0, AT_ONCE);
             const currentPromises = currentBatch.map(func => func());
@@ -178,7 +209,7 @@ async function performLiquidation(contract) {
 }
 
 async function fetchAllTraders() {
-    const baseURL = 'https://api.nftperp.xyz/leaderboard/trade';
+    const baseURL = 'https://live.nftperp.xyz/leaderboard/trade';
     const pageSize = 1000; 
     let allTraders = [];
     let page = 1;
@@ -214,9 +245,60 @@ async function fetchAllTraders() {
     return allTraders;
 }
 
+async function fetchAllLPs() {
+    const baseURL = `https://live.nftperp.xyz/liquidity`;
+    const pageSize = 1000; 
+    let allLPs = [];
+    let page = 1;
+
+    while (true) {
+        try {
+            const response = await axios.get(baseURL, {
+                params: {
+                    page: page,
+                    pageSize: pageSize
+                }
+            });
+
+            if (response.data.status === "success") {
+                //loop thrue responses.data.data
+
+                for (let i = 0; i < response.data.data.result.length; i++) {
+                    let lp = response.data.data.result[i];
+
+                    if (!ACTIVE_LP_POSITIONS[lp.amm]) {
+                        ACTIVE_LP_POSITIONS[lp.amm] = [];
+                    }
+
+                    if (!ACTIVE_LP_POSITIONS[lp.amm].includes(lp.maker)) {
+                        ACTIVE_LP_POSITIONS[lp.amm].push(lp.maker);
+                    }
+
+                }
+
+                const lps = response.data.data.result.map(item => item.maker);
+                allLPs.push(...lps);
+
+                if (lps.length < pageSize || allLPs.length >= response.data.data.totalCount) {
+                    break;
+                }
+
+                page++;
+            } else {
+                console.error("Failed to fetch data for page", page);
+                break;
+            }
+
+            await new Promise(resolve => setTimeout(resolve, 1000));
+        } catch (error) {
+            console.error("Error fetching data:", error);
+            break;
+        }
+    }
+}
 
 async function liquidation(){
-    let res = await axios.get("https://api.nftperp.xyz/contracts");
+    let res = await axios.get("https://live.nftperp.xyz/contracts");
     let CH_ADDY = res.data.data.clearingHouse;
 
     let contract = new ethers.Contract(CH_ADDY, CH_ABI['abi'], signer);
@@ -239,6 +321,8 @@ async function liquidation(){
         console.log(curr_positions)
     }
 
+    await fetchAllLPs()
+
     contract.on('PositionChanged', async (amm, trader, margin, size, exchangedQuote, exchangedBase, realizedPnL, fundingPayment, markPrice, ifFee, ammFee, limitFee, liquidatorFee, keeperFee, tradeType, event) => {
         const position = await contract.getPosition(amm, trader);
         
@@ -257,6 +341,29 @@ async function liquidation(){
             await performLiquidation(contract)
         }
     });  
+
+    contract.on("LiquidityAdded", (amm, maker) => {
+        if (!ACTIVE_LP_POSITIONS[amm]) {
+            ACTIVE_LP_POSITIONS[amm] = [];
+        }
+
+        if (!ACTIVE_LP_POSITIONS[amm].includes(maker)) {
+            ACTIVE_LP_POSITIONS[amm].push(maker);
+        }
+    });
+
+    contract.on("LiquidityRemoved", async (amm, maker) => {
+        let amm_contract =  new ethers.Contract(amm, AMM_ABI['abi'], signer);
+        let position = await amm_contract.getMakerPositionData(maker);
+        
+        if (position.share.eq(0)){
+            let index = ACTIVE_LP_POSITIONS[amm].indexOf(maker);
+            if (index > -1) {
+                ACTIVE_LP_POSITIONS[amm].splice(index, 1);
+            }
+        }
+
+    });
 
     //run performLiquidation every minute
     while (true){

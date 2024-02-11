@@ -26,7 +26,7 @@ async function perform_trigger(contract, amms){
     isRunning = true;
 
     try{
-        let triggerOrders = await axios.get(`https://api.nftperp.xyz/orders/trigger`)
+        let triggerOrders = await axios.get(`https://live.nftperp.xyz/orders/trigger`)
 
         for (const triggerOrder of triggerOrders.data.data) {
             let amm = amms[triggerOrder.amm]
@@ -45,7 +45,7 @@ async function perform_trigger(contract, amms){
 }
 
 async function main(){
-    let res = await axios.get("https://api.nftperp.xyz/contracts");
+    let res = await axios.get("https://live.nftperp.xyz/contracts");
 
     let CH_ADDY = res.data.data.clearingHouse;
     let contract = new ethers.Contract(CH_ADDY, CH_ABI['abi'], signer);
