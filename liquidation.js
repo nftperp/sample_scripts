@@ -323,7 +323,7 @@ async function liquidation(){
 
     await fetchAllLPs()
 
-    contract.on('PositionChanged', async (amm, trader, margin, size, exchangedQuote, exchangedBase, realizedPnL, fundingPayment, markPrice, ifFee, ammFee, limitFee, liquidatorFee, keeperFee, tradeType, event) => {
+    contract.on('PositionChanged', async (amm, trader, margin, size, openNotional, exchangedQuote, exchangedBase, realizedPnL, fundingPayment, markPrice, tradeType, event) => {
         const position = await contract.getPosition(amm, trader);
         
         if (position.size != 0){
@@ -355,13 +355,16 @@ async function liquidation(){
     contract.on("LiquidityRemoved", async (amm, maker) => {
         let amm_contract =  new ethers.Contract(amm, AMM_ABI['abi'], signer);
         let position = await amm_contract.getMakerPositionData(maker);
-        
-        if (position.share.eq(0)){
-            let index = ACTIVE_LP_POSITIONS[amm].indexOf(maker);
-            if (index > -1) {
-                ACTIVE_LP_POSITIONS[amm].splice(index, 1);
+
+        if (position.share){
+            if (position.share.eq(0)){
+                let index = ACTIVE_LP_POSITIONS[amm].indexOf(maker);
+                if (index > -1) {
+                    ACTIVE_LP_POSITIONS[amm].splice(index, 1);
+                }
             }
         }
+        
 
     });
 
