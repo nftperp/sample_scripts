@@ -3,8 +3,11 @@ require("dotenv").config();
 const axios = require("axios").default;
 const CH_ABI = require("./abi/ClearingHouse.json");
 const ERC20_ABI = require("./abi/ERC20.json");
-const AMM_ABI = require("./abi/AMM.json");
+const AMM_ABI = require("./abi/AMMRouter.json");
 const fs = require("fs");
+const fetch = require('node-fetch');
+
+const API_URL = process.env.API_URL;
 
 let provider = new ethers.providers.AlchemyProvider(
     process.env.NETWORK,
@@ -43,128 +46,90 @@ async function getActivePositionsForAmm(contract, amm, traders) {
     return activeTraders;
 }
 
-let isRunning = false;
-
-function getConfig(){
-    const configData = fs.readFileSync('config.json', 'utf8');
-    let config = JSON.parse(configData);
-    return config
-}
-
-async function getExposure(contract, signer, addy){
-    let position = await contract.getPosition(addy, signer.address);
-
-    let amm_contract = new ethers.Contract(addy, AMM_ABI['abi'], signer);
-    let mark_price = ethers.utils.formatEther(await amm_contract.getMarkPrice())
-    let ethAmount = ethers.utils.formatEther(position.size);
-    let total_exposure = Math.abs(ethAmount * mark_price)
-    return [position, total_exposure]
-}
-
-async function processSingleSellForAmm(contract, signer, addy, amm) {
+async function attemptLiquidationMaker(amm, maker){
+    let amm_contract = new ethers.Contract(amm, AMM_ABI['abi'], signer);
     try {
-        let [position, total_exposure] = await getExposure(contract, signer, addy);
-        
-        if (position.size != 0){
-            let config = getConfig();
-            
-            let [position, current_exposure] = await getExposure(contract, signer, addy);
-            if (current_exposure > config.SELL_ONCE){
-                let trade_side = position.size > 0 ? 1 : 0;
-                let failed = true;
-                for (let i = 0; i < 5; i++){
-                    try{
-                        await contract.openPosition(addy, trade_side, ethers.utils.parseEther(String(config.SELL_ONCE)), ethers.utils.parseEther('1'), 0);
-                        console.log(`Sold ${config.SELL_ONCE} ETH of ${amm}. Current Exposure is ${current_exposure} ETH`);
-                        failed = false;
-                        break;
-                    } catch (error) {
-                        await new Promise(r => setTimeout(r, 3000));
-                    }
-                }
+        let isLiquidatable = await amm_contract.isMakerLiquidatable(maker)
 
-                if (failed){
-                    let blockNumber = await provider.getBlockNumber();
-
-                    console.log(`Failed to sell ${amm} at blockNumber ${blockNumber}`)
-                    console.log(addy, trade_side, ethers.utils.parseEther(String(config.SELL_ONCE)), ethers.utils.parseEther('1'), 0)
-                }
-               
-            } else {
-            }
+        if (isLiquidatable){
+            await contract.liquidateMaker(amm, maker);
         }
+
     } catch (error) {
-        console.log("Error in processing single sell for AMM", amm, error);
+        let blockNumber = await provider.getBlockNumber();
+        console.error(`Failed to liquidate maker ${maker} in ${amm}, block number: ${blockNumber}, ${error}, liquidatable status: ${await amm_contract.isMakerLiquidatable(maker)}`);
+
+        await fetch(process.env.SLACK_WEBHOOK_URL_ORACLE_DEVIATION, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              blocks: [
+                {
+                  type: 'header',
+                  text: {
+                    type: 'plain_text',
+                    text: ':exclamation: Liquidation Alert',
+                    emoji: true,
+                  },
+                },
+                {
+                  type: 'section',
+                  text: {
+                    type: 'mrkdwn',
+                    text: `Failed to liquidate maker ${maker} in ${amm}, block number: ${blockNumber}`,
+                  },
+                },
+              ],
+            }),
+          })      
     }
 }
 
-async function twapOut(){
-
-    let res = await axios.get("https://live.nftperp.xyz/contracts");
-    let CH_ADDY = res.data.data.clearingHouse;
-    let contract = new ethers.Contract(CH_ADDY, CH_ABI['abi'], signer);
-
-    while(true) { 
-        let config = getConfig();
-        
-        for (let amm in res.data.data.amms){
-            let addy = res.data.data.amms[amm];
-            await processSingleSellForAmm(contract, signer, addy, amm); 
-            await new Promise(r => setTimeout(r, 3000));
-        }
-
-        await new Promise(r => setTimeout(r, config.REST_TIME * 1000));
-    }
-}
-
-function absBigNumber(bigNumber) {
-    if (bigNumber.isNegative()) {
-        return bigNumber.mul(ethers.BigNumber.from("-1"));
-    }
-    return bigNumber;
-}
-
-async function attemptLiquidation(amm, trader, contract, signer) {
+async function attemptLiquidation(amm, trader) {
     try {
         let isLiquidatable = await contract.isLiquidatable(amm, trader)
         if (isLiquidatable) {
-            let amm_contract = new ethers.Contract(amm, AMM_ABI['abi'], signer);
-            let position = await contract.getPosition(amm, trader);
-            let liquidationPrice = await amm_contract.getLiquidationPrice();
-            let positionNotional = position.size.mul(liquidationPrice).div(ethers.utils.parseEther('1'));
-            await contract.liquidate(amm, absBigNumber(position.size), trader, absBigNumber(positionNotional));
+            await contract.liquidate(amm, trader);
+            
             let index = ACTIVE_POSITIONS[amm].indexOf(trader);
+
             if (index > -1) {
                 ACTIVE_POSITIONS[amm].splice(index, 1);
             }
         }
+
     } catch (error) {
-        let blockNumber = await provider.getBlockNumber();
-        console.error(`Failed to liquidate ${trader} in ${amm}, block number: ${blockNumber}, liquidatable status: ${await contract.isLiquidatable(amm, trader)}`);
-    }
-}
 
-async function attemptLiquidationMaker(amm, maker, contract, signer){
-    try {
-        let amm_contract = new ethers.Contract(amm, AMM_ABI['abi'], signer);
-        let isLiquidatable = await amm_contract.isMakerLiquidatable(maker)
-
-        if (isLiquidatable){
-            let [size, oN] = await amm_contract.getFullMakerImpermanentPosition(maker);
-            let markPrice = await amm_contract.getMarkPrice();
-
-            let margin_size = size.mul(markPrice).div(2);
-            await contract.liquidateMaker(amm, maker, margin_size);
-
-            let index = ACTIVE_LP_POSITIONS[amm].indexOf(maker);
-            if (index > -1) {
-                ACTIVE_LP_POSITIONS[amm].splice(index, 1);
+            if (process.env.SLACK_WEBHOOK_URL_ORACLE_DEVIATION) {
+                await fetch(process.env.SLACK_WEBHOOK_URL_ORACLE_DEVIATION, {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                      blocks: [
+                        {
+                          type: 'header',
+                          text: {
+                            type: 'plain_text',
+                            text: ':exclamation: Liquidation Alert',
+                            emoji: true,
+                          },
+                        },
+                        {
+                          type: 'section',
+                          text: {
+                            type: 'mrkdwn',
+                            text: `Failed to liquidate ${trader} in ${amm}, block number: ${blockNumber}`,
+                          },
+                        },
+                      ],
+                    }),
+                  })
             }
-
-        }
-    } catch (error) {
     }
-
 }
 
 
@@ -184,14 +149,7 @@ async function performLiquidation(contract) {
         for (const amm in ACTIVE_POSITIONS) {
             for (const t in ACTIVE_POSITIONS[amm]) {
                 let trader = ACTIVE_POSITIONS[amm][t]
-                allLiquidations.push(() => attemptLiquidation(amm, trader, contract, signer));
-            }
-        }
-
-        for (const amm in ACTIVE_LP_POSITIONS) {
-            for (const t in ACTIVE_LP_POSITIONS[amm]) {
-                let trader = ACTIVE_LP_POSITIONS[amm][t]
-                allLiquidations.push(() => attemptLiquidationMaker(amm, trader, contract, signer));
+                allLiquidations.push(() => attemptLiquidation(amm, trader));
             }
         }
 
@@ -199,6 +157,21 @@ async function performLiquidation(contract) {
             const currentBatch = allLiquidations.splice(0, AT_ONCE);
             const currentPromises = currentBatch.map(func => func());
             await Promise.all(currentPromises);
+        }
+
+        let allMakerLiquidations = [];
+
+        for (const amm in ACTIVE_LP_POSITIONS) {
+            for (const t in ACTIVE_LP_POSITIONS[amm]) {
+                let maker = ACTIVE_LP_POSITIONS[amm][t]
+                allMakerLiquidations.push(() => attemptLiquidationMaker(amm, maker));
+            }
+        }
+
+        while (allMakerLiquidations.length > 0) {
+            const currentBatch2 = allMakerLiquidations.splice(0, AT_ONCE);
+            const currentPromises2 = currentBatch2.map(func => func());
+            await Promise.all(currentPromises2);
         }
 
     } catch (error) {
@@ -209,7 +182,7 @@ async function performLiquidation(contract) {
 }
 
 async function fetchAllTraders() {
-    const baseURL = 'https://live.nftperp.xyz/leaderboard/trade';
+    const baseURL = `${API_URL}/leaderboard/trade`;
     const pageSize = 1000; 
     let allTraders = [];
     let page = 1;
@@ -236,6 +209,7 @@ async function fetchAllTraders() {
                 console.error("Failed to fetch data for page", page);
                 break;
             }
+            await new Promise(resolve => setTimeout(resolve, 1000));
         } catch (error) {
             console.error("Error fetching data:", error);
             break;
@@ -246,10 +220,17 @@ async function fetchAllTraders() {
 }
 
 async function fetchAllLPs() {
-    const baseURL = `https://live.nftperp.xyz/liquidity`;
+    const baseURL = `${API_URL}/liquidity`;
     const pageSize = 1000; 
     let allLPs = [];
     let page = 1;
+    const notionals = {};
+
+    const { data: { data: { amms } } } = await axios.get(`${API_URL}/contracts`);
+    const ammAddresses = Object.values(amms);
+    ammAddresses.forEach(amm => {
+        notionals[amm] = {};
+    });
 
     while (true) {
         try {
@@ -266,16 +247,12 @@ async function fetchAllLPs() {
                 for (let i = 0; i < response.data.data.result.length; i++) {
                     let lp = response.data.data.result[i];
 
-                    if (!ACTIVE_LP_POSITIONS[lp.amm]) {
-                        ACTIVE_LP_POSITIONS[lp.amm] = [];
+                    if (!notionals[lp.amm][lp.maker]) {
+                        notionals[lp.amm][lp.maker] = 0;
                     }
-
-                    if (!ACTIVE_LP_POSITIONS[lp.amm].includes(lp.maker)) {
-                        ACTIVE_LP_POSITIONS[lp.amm].push(lp.maker);
-                    }
-
+                    notionals[lp.amm][lp.maker] += Number(lp.notionalExchanged);
                 }
-
+                   
                 const lps = response.data.data.result.map(item => item.maker);
                 allLPs.push(...lps);
 
@@ -295,12 +272,22 @@ async function fetchAllLPs() {
             break;
         }
     }
+
+    for (const amm in notionals) {
+        ACTIVE_LP_POSITIONS[amm] = [];
+        for (const maker in notionals[amm]) {
+            if (notionals[amm][maker] > 0.0000001) {    // float math issue, set a threshold
+                ACTIVE_LP_POSITIONS[amm].push(maker);
+            }
+        }
+    }
 }
 
-async function liquidation(){
-    let res = await axios.get("https://live.nftperp.xyz/contracts");
-    let CH_ADDY = res.data.data.clearingHouse;
 
+async function liquidation(){
+    let res = await axios.get(`${API_URL}/contracts`);
+    let CH_ADDY = res.data.data.clearingHouse;
+    console.log(CH_ADDY)
     let contract = new ethers.Contract(CH_ADDY, CH_ABI['abi'], signer);
    
     let weth_contract = new ethers.Contract(res.data.data.weth, ERC20_ABI['abi'], signer);
@@ -318,7 +305,6 @@ async function liquidation(){
         let AMM_ADDY = res.data.data.amms[amm]
         let curr_positions = await getActivePositionsForAmm(contract, AMM_ADDY, traders);
         ACTIVE_POSITIONS[AMM_ADDY] = curr_positions
-        console.log(curr_positions)
     }
 
     await fetchAllLPs()
@@ -364,7 +350,7 @@ async function liquidation(){
                 }
             }
         }
-        
+
 
     });
 
@@ -374,7 +360,6 @@ async function liquidation(){
         await new Promise(r => setTimeout(r, 60000));
 
         if (isRunning == false){
-            console.log("Running trigger because of minute wait")
             
             try{
                 await performLiquidation(contract)            
@@ -386,5 +371,4 @@ async function liquidation(){
 
 }
 
-twapOut()
 liquidation()
