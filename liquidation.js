@@ -135,7 +135,6 @@ async function attemptLiquidation(amm, trader) {
 
 async function performLiquidation(contract) {
     try {
-        //wait random second between 0 to 0.5 to prevent concurrency
         await new Promise(r => setTimeout(r, Math.random() * 500));
         
         if(isRunning) {
@@ -242,8 +241,6 @@ async function fetchAllLPs() {
             });
 
             if (response.data.status === "success") {
-                //loop thrue responses.data.data
-
                 for (let i = 0; i < response.data.data.result.length; i++) {
                     let lp = response.data.data.result[i];
 
@@ -368,7 +365,6 @@ async function liquidation(){
             }
         }
     };
-
 }
 
 liquidation()
