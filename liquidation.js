@@ -46,6 +46,8 @@ async function getActivePositionsForAmm(contract, amm, traders) {
     return activeTraders;
 }
 
+let isRunning = false;
+
 async function attemptLiquidationMaker(amm, maker){
     let amm_contract = new ethers.Contract(amm, AMM_ABI['abi'], signer);
     let error = false;
@@ -127,7 +129,7 @@ async function attemptLiquidation(amm, trader) {
 
                 //break 3 secs
                 await new Promise(r => setTimeout(r, 3000));
-                
+
                 if (i >= 4){
                     error = true;
                 }
