@@ -48,14 +48,35 @@ async function getActivePositionsForAmm(contract, amm, traders) {
 
 async function attemptLiquidationMaker(amm, maker){
     let amm_contract = new ethers.Contract(amm, AMM_ABI['abi'], signer);
+    let error = false;
     try {
         let isLiquidatable = await amm_contract.isMakerLiquidatable(maker)
 
         if (isLiquidatable){
-            await contract.liquidateMaker(amm, maker);
+
+            for (let i = 0; i < 5; i++){
+                try {
+                    await contract.liquidateMaker(amm, maker);
+                    break;
+                }
+                catch (error){
+                    console.log(error)
+                }
+
+                //break 3 secs
+                await new Promise(r => setTimeout(r, 3000));
+
+                if (i >= 4){
+                    error = true;
+                }
+            }
         }
 
     } catch (error) {
+    
+    }
+
+    if (error == true){
         let blockNumber = await provider.getBlockNumber();
         console.error(`Failed to liquidate maker ${maker} in ${amm}, block number: ${blockNumber}, ${error}, liquidatable status: ${await amm_contract.isMakerLiquidatable(maker)}`);
 
@@ -83,15 +104,34 @@ async function attemptLiquidationMaker(amm, maker){
                 },
               ],
             }),
-          })      
+          })  
     }
 }
 
 async function attemptLiquidation(amm, trader) {
+    let error = false;
+
     try {
         let isLiquidatable = await contract.isLiquidatable(amm, trader)
         if (isLiquidatable) {
-            await contract.liquidate(amm, trader);
+
+            //Do it 5 times
+            for (let i = 0; i < 5; i++){
+                try {
+                    await contract.liquidate(amm, trader);
+                    break;
+                }
+                catch (error){
+                    console.log(error)
+                }
+
+                //break 3 secs
+                await new Promise(r => setTimeout(r, 3000));
+                
+                if (i >= 4){
+                    error = true;
+                }
+            }
             
             let index = ACTIVE_POSITIONS[amm].indexOf(trader);
 
@@ -101,40 +141,44 @@ async function attemptLiquidation(amm, trader) {
         }
 
     } catch (error) {
+        error = true;
+    }
 
-            if (process.env.SLACK_WEBHOOK_URL_ORACLE_DEVIATION) {
-                await fetch(process.env.SLACK_WEBHOOK_URL_ORACLE_DEVIATION, {
-                    method: 'POST',
-                    headers: {
-                      'Content-Type': 'application/json',
+    if (error == true){
+        if (process.env.SLACK_WEBHOOK_URL_ORACLE_DEVIATION) {
+            await fetch(process.env.SLACK_WEBHOOK_URL_ORACLE_DEVIATION, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  blocks: [
+                    {
+                      type: 'header',
+                      text: {
+                        type: 'plain_text',
+                        text: ':exclamation: Liquidation Alert',
+                        emoji: true,
+                      },
                     },
-                    body: JSON.stringify({
-                      blocks: [
-                        {
-                          type: 'header',
-                          text: {
-                            type: 'plain_text',
-                            text: ':exclamation: Liquidation Alert',
-                            emoji: true,
-                          },
-                        },
-                        {
-                          type: 'section',
-                          text: {
-                            type: 'mrkdwn',
-                            text: `Failed to liquidate ${trader} in ${amm}, block number: ${blockNumber}`,
-                          },
-                        },
-                      ],
-                    }),
-                  })
-            }
+                    {
+                      type: 'section',
+                      text: {
+                        type: 'mrkdwn',
+                        text: `Failed to liquidate ${trader} in ${amm}, block number: ${blockNumber}`,
+                      },
+                    },
+                  ],
+                }),
+              })
+        }
     }
 }
 
 
 async function performLiquidation(contract) {
     try {
+        //wait random second between 0 to 0.5 to prevent concurrency
         await new Promise(r => setTimeout(r, Math.random() * 500));
         
         if(isRunning) {
@@ -241,6 +285,8 @@ async function fetchAllLPs() {
             });
 
             if (response.data.status === "success") {
+                //loop thrue responses.data.data
+
                 for (let i = 0; i < response.data.data.result.length; i++) {
                     let lp = response.data.data.result[i];
 
@@ -365,6 +411,7 @@ async function liquidation(){
             }
         }
     };
+
 }
 
 liquidation()
