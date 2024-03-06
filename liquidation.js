@@ -48,7 +48,7 @@ async function getActivePositionsForAmm(contract, amm, traders) {
 
 let isRunning = false;
 
-async function attemptLiquidationMaker(amm, maker){
+async function attemptLiquidationMaker(contract, amm, maker){
     let amm_contract = new ethers.Contract(amm, AMM_ABI['abi'], signer);
     let error = false;
     try {
@@ -110,7 +110,7 @@ async function attemptLiquidationMaker(amm, maker){
     }
 }
 
-async function attemptLiquidation(amm, trader) {
+async function attemptLiquidation(contract, amm, trader) {
     let error = false;
 
     try {
@@ -194,7 +194,7 @@ async function performLiquidation(contract) {
         for (const amm in ACTIVE_POSITIONS) {
             for (const t in ACTIVE_POSITIONS[amm]) {
                 let trader = ACTIVE_POSITIONS[amm][t]
-                allLiquidations.push(() => attemptLiquidation(amm, trader));
+                allLiquidations.push(() => attemptLiquidation(contract, amm, trader));
             }
         }
 
@@ -209,7 +209,7 @@ async function performLiquidation(contract) {
         for (const amm in ACTIVE_LP_POSITIONS) {
             for (const t in ACTIVE_LP_POSITIONS[amm]) {
                 let maker = ACTIVE_LP_POSITIONS[amm][t]
-                allMakerLiquidations.push(() => attemptLiquidationMaker(amm, maker));
+                allMakerLiquidations.push(() => attemptLiquidationMaker(contract, amm, maker));
             }
         }
 
